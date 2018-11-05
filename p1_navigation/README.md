@@ -27,7 +27,6 @@ conda create --name drlnd python=3.6
 source activate drlnd
 
 pip install ./python
-
 ```
 
 1. Download the environment from one of the links below.  You need only select the environment that matches your operating system:

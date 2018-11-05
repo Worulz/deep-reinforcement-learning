@@ -102,3 +102,8 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# continuous control
+p2_continuous-control/Reacher_Linux_NoVis/
+p2_continuous-control/Reacher_Linux_NoVis_Disb_agents.zip
+p2_continuous-control/Reacher_Linux_NoVis_single_agent.zip
