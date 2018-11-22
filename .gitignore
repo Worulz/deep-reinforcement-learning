@@ -110,3 +110,6 @@ p2_continuous-control/Reacher_Linux_NoVis_single_agent.zip
 p2_continuous-control/checkpoint_actor.pth
 p2_continuous-control/checkpoint_critic.pth
 p2_continuous-control/Reacher_Linux_NoVis_single_agent/
+
+p3_collab-compet/Tennis_Linux_NoVis
+p3_collab-compet/Tennis_Linux_NoVis.zip
