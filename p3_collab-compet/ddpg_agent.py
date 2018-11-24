@@ -10,12 +10,12 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 BUFFER_SIZE = int(1e6)  # replay buffer size
-BATCH_SIZE = 128        # minibatch size
+BATCH_SIZE = 1024       # minibatch size
 GAMMA = 0.99            # discount factor
 TAU = 1e-3              # for soft update of target parameters
-LR_ACTOR = 1e-4         # learning rate of the actor 
-LR_CRITIC = 3e-4        # learning rate of the critic
-WEIGHT_DECAY = 0.0001   # L2 weight decay
+LR_ACTOR = 5e-4         # learning rate of the actor 
+LR_CRITIC = 1e-3        # learning rate of the critic
+WEIGHT_DECAY = 0        # L2 weight decay
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -51,15 +51,30 @@ class Agent():
         # Replay memory
         self.memory = ReplayBuffer(action_size, BUFFER_SIZE, BATCH_SIZE, random_seed)
     
-    def step(self, state, action, reward, next_state, done):
+#     def step(self, state, action, reward, next_state, done):
+#         """Save experience in replay memory, and use random sample from buffer to learn."""
+#         # Save experience / reward
+#         self.memory.add(state, action, reward, next_state, done)
+
+#         # Learn, if enough samples are available in memory
+#         if len(self.memory) > BATCH_SIZE:
+#             experiences = self.memory.sample()
+#             self.learn(experiences, GAMMA)
+
+    def step(self, state, action, reward, next_state, done, timestep):
         """Save experience in replay memory, and use random sample from buffer to learn."""
         # Save experience / reward
-        self.memory.add(state, action, reward, next_state, done)
+        #self.memory.add(state, action, reward, next_state, done)
+        
+        for i in range(20):
+            self.memory.add(state[i], action[i], reward[i], next_state[i], done[i])
 
         # Learn, if enough samples are available in memory
-        if len(self.memory) > BATCH_SIZE:
-            experiences = self.memory.sample()
-            self.learn(experiences, GAMMA)
+        # only learn every timesteps
+        if len(self.memory) > BATCH_SIZE and timestep %20 == 0:
+            for i in range(10):
+                experiences = self.memory.sample()
+                self.learn(experiences, GAMMA)
 
     def act(self, state, add_noise=True):
         """Returns actions for given state as per current policy."""
@@ -69,7 +84,10 @@ class Agent():
             action = self.actor_local(state).cpu().data.numpy()
         self.actor_local.train()
         if add_noise:
-            action += self.noise.sample()
+            #action += self.noise.sample()  
+            for i in range(20):
+                action[i] += self.noise.sample()
+                
         return np.clip(action, -1, 1)
 
     def reset(self):
@@ -101,6 +119,9 @@ class Agent():
         # Minimize the loss
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        
+        # --------------------------- clip gradianet here ----------------------- #
+        torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 1)
         self.critic_optimizer.step()
 
         # ---------------------------- update actor ---------------------------- #
