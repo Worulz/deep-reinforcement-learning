@@ -10,17 +10,23 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 BUFFER_SIZE = int(1e6)  # replay buffer size
-BATCH_SIZE = 128        # minibatch size
+BATCH_SIZE = 256        # minibatch size
 GAMMA = 0.99            # discount factor
-TAU = 1e-3              # for soft update of target parameters
-LR_ACTOR = 2e-3         # learning rate of the actor 
+TAU = 1e-2              # for soft update of target parameters
+LR_ACTOR = 1e-3         # learning rate of the actor 
 LR_CRITIC = 1e-3        # learning rate of the critic
-WEIGHT_DECAY = 0        # L2 weight decay
+WEIGHT_DECAY = 0.0      # L2 weight decay
 
-update_learn = 1
+n_timestepupdate = 6
+n_updatelearn = 6
+
 control_noise = 6       # noise level
 eps_end = 0 #-float('Inf')
-eps_decay = 250         # decay per episodes
+eps_decay = 100         # decay per episodes
+
+start_noise = 2
+noise_decay = 0.9999
+decay_step = 1
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -40,7 +46,7 @@ class Agent():
         self.state_size = state_size
         self.action_size = action_size
         self.num_agents = num_agents 
-        self.eps = control_noise
+        self.eps = start_noise
         self.seed = random.seed(random_seed)
 
         # Actor Network (w/ Target Network)
@@ -66,13 +72,13 @@ class Agent():
         
         # Learn, if enough samples are available in memory
         # only learn every timesteps
-        if len(self.memory) > BATCH_SIZE and timestep%1 == 0:
+        if len(self.memory) > BATCH_SIZE and timestep% n_timestepupdate == 0:
             # learn per updates
-            for _ in range(update_learn):
+            for _ in range(n_updatelearn):
                 experiences = self.memory.sample()
                 self.learn(experiences, GAMMA, agent)
 
-    def act(self, states, add_noise=True):
+    def act(self, states, add_noise=True, timestep = 10):
         """Returns actions for given state as per current policy."""
         states = torch.from_numpy(states).float().to(device)
 
@@ -88,7 +94,12 @@ class Agent():
                 actions[agent, :] = action
         self.actor_local.train()
         if add_noise:
-            #actions += self.noise.sample()  
+            #actions += self.noise.sample()
+            
+            #decay noise
+            if timestep % decay_step == 0 and add_noise:
+                self.eps *= noise_decay
+                self.eps -= (1/eps_decay)
             actions += self.eps * self.noise.sample()
                 
         return np.clip(actions, -1, 1)
@@ -116,7 +127,7 @@ class Agent():
         # Get predicted next-state actions and Q values from target models
         actions_next = self.actor_target(next_states)
         
-        # testing
+        # next action for each agent
         if agent == 0:
             actions_next = torch.cat((actions_next, actions[:,2:]), dim=1)
         else:
@@ -133,14 +144,14 @@ class Agent():
         critic_loss.backward()
         
         # --------------------------- clip gradianet here ----------------------- #
-        #torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 1)
+        torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 1)
         self.critic_optimizer.step()
 
         # ---------------------------- update actor ---------------------------- #
         # Compute actor loss
         actions_pred = self.actor_local(states)
         
-        # testing
+        # predict action for each agent
         if agent == 0:
             actions_pred = torch.cat((actions_pred, actions[:,2:]), dim=1)
         else:
@@ -156,12 +167,6 @@ class Agent():
         # ----------------------- update target networks ----------------------- #
         self.soft_update(self.critic_local, self.critic_target, TAU)
         self.soft_update(self.actor_local, self.actor_target, TAU) 
-        
-        #update eps
-        # testing
-        self.eps = self.eps - (1/eps_decay)
-        if self.eps < eps_end:
-            self.eps = eps_end
 
     def soft_update(self, local_model, target_model, tau):
         """Soft update model parameters.
