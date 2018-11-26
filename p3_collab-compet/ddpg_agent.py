@@ -10,29 +10,37 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 BUFFER_SIZE = int(1e6)  # replay buffer size
-BATCH_SIZE = 1024       # minibatch size
+BATCH_SIZE = 128        # minibatch size
 GAMMA = 0.99            # discount factor
 TAU = 1e-3              # for soft update of target parameters
-LR_ACTOR = 5e-4         # learning rate of the actor 
+LR_ACTOR = 2e-3         # learning rate of the actor 
 LR_CRITIC = 1e-3        # learning rate of the critic
 WEIGHT_DECAY = 0        # L2 weight decay
+
+update_learn = 1
+control_noise = 6       # noise level
+eps_end = 0 #-float('Inf')
+eps_decay = 250         # decay per episodes
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class Agent():
     """Interacts with and learns from the environment."""
     
-    def __init__(self, state_size, action_size, random_seed):
+    def __init__(self, state_size, action_size,num_agents, random_seed):
         """Initialize an Agent object.
         
         Params
         ======
             state_size (int): dimension of each state
             action_size (int): dimension of each action
+            num_agent (int): number of agents
             random_seed (int): random seed
         """
         self.state_size = state_size
         self.action_size = action_size
+        self.num_agents = num_agents 
+        self.eps = control_noise
         self.seed = random.seed(random_seed)
 
         # Actor Network (w/ Target Network)
@@ -50,50 +58,46 @@ class Agent():
 
         # Replay memory
         self.memory = ReplayBuffer(action_size, BUFFER_SIZE, BATCH_SIZE, random_seed)
-    
-#     def step(self, state, action, reward, next_state, done):
-#         """Save experience in replay memory, and use random sample from buffer to learn."""
-#         # Save experience / reward
-#         self.memory.add(state, action, reward, next_state, done)
 
-#         # Learn, if enough samples are available in memory
-#         if len(self.memory) > BATCH_SIZE:
-#             experiences = self.memory.sample()
-#             self.learn(experiences, GAMMA)
-
-    def step(self, state, action, reward, next_state, done, timestep):
+    def step(self, state, action, reward, next_state, done, timestep, agent):
         """Save experience in replay memory, and use random sample from buffer to learn."""
         # Save experience / reward
-        #self.memory.add(state, action, reward, next_state, done)
+        self.memory.add(state, action, reward, next_state, done)
         
-        for i in range(20):
-            self.memory.add(state[i], action[i], reward[i], next_state[i], done[i])
-
         # Learn, if enough samples are available in memory
         # only learn every timesteps
-        if len(self.memory) > BATCH_SIZE and timestep %20 == 0:
-            for i in range(10):
+        if len(self.memory) > BATCH_SIZE and timestep%1 == 0:
+            # learn per updates
+            for _ in range(update_learn):
                 experiences = self.memory.sample()
-                self.learn(experiences, GAMMA)
+                self.learn(experiences, GAMMA, agent)
 
-    def act(self, state, add_noise=True):
+    def act(self, states, add_noise=True):
         """Returns actions for given state as per current policy."""
-        state = torch.from_numpy(state).float().to(device)
+        states = torch.from_numpy(states).float().to(device)
+
+        # setup actions by the number of agents and action size
+        actions = np.zeros((self.num_agents, self.action_size))
+        
         self.actor_local.eval()
         with torch.no_grad():
-            action = self.actor_local(state).cpu().data.numpy()
+            # for the number of states
+            for agent, state in enumerate(states):
+                action = self.actor_local(state).cpu().data.numpy()
+                # append the action to actions array
+                actions[agent, :] = action
         self.actor_local.train()
         if add_noise:
-            #action += self.noise.sample()  
-            for i in range(20):
-                action[i] += self.noise.sample()
+            #actions += self.noise.sample()  
+            actions += self.eps * self.noise.sample()
                 
-        return np.clip(action, -1, 1)
+        return np.clip(actions, -1, 1)
+
 
     def reset(self):
         self.noise.reset()
 
-    def learn(self, experiences, gamma):
+    def learn(self, experiences, gamma, agent):
         """Update policy and value parameters using given batch of experience tuples.
         Q_targets = r + γ * critic_target(next_state, actor_target(next_state))
         where:
@@ -104,12 +108,20 @@ class Agent():
         ======
             experiences (Tuple[torch.Tensor]): tuple of (s, a, r, s', done) tuples 
             gamma (float): discount factor
+            agent (int): indicator for which agent is learning
         """
         states, actions, rewards, next_states, dones = experiences
 
         # ---------------------------- update critic ---------------------------- #
         # Get predicted next-state actions and Q values from target models
         actions_next = self.actor_target(next_states)
+        
+        # testing
+        if agent == 0:
+            actions_next = torch.cat((actions_next, actions[:,2:]), dim=1)
+        else:
+            actions_next = torch.cat((actions[:,:2], actions_next), dim=1)
+            
         Q_targets_next = self.critic_target(next_states, actions_next)
         # Compute Q targets for current states (y_i)
         Q_targets = rewards + (gamma * Q_targets_next * (1 - dones))
@@ -121,12 +133,20 @@ class Agent():
         critic_loss.backward()
         
         # --------------------------- clip gradianet here ----------------------- #
-        torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 1)
+        #torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 1)
         self.critic_optimizer.step()
 
         # ---------------------------- update actor ---------------------------- #
         # Compute actor loss
         actions_pred = self.actor_local(states)
+        
+        # testing
+        if agent == 0:
+            actions_pred = torch.cat((actions_pred, actions[:,2:]), dim=1)
+        else:
+            actions_pred = torch.cat((actions[:,:2], actions_pred), dim=1)
+        
+        
         actor_loss = -self.critic_local(states, actions_pred).mean()
         # Minimize the loss
         self.actor_optimizer.zero_grad()
@@ -135,7 +155,13 @@ class Agent():
 
         # ----------------------- update target networks ----------------------- #
         self.soft_update(self.critic_local, self.critic_target, TAU)
-        self.soft_update(self.actor_local, self.actor_target, TAU)                     
+        self.soft_update(self.actor_local, self.actor_target, TAU) 
+        
+        #update eps
+        # testing
+        self.eps = self.eps - (1/eps_decay)
+        if self.eps < eps_end:
+            self.eps = eps_end
 
     def soft_update(self, local_model, target_model, tau):
         """Soft update model parameters.
@@ -152,8 +178,8 @@ class Agent():
 
 class OUNoise:
     """Ornstein-Uhlenbeck process."""
-
-    def __init__(self, size, seed, mu=0., theta=0.15, sigma=0.2):
+    def __init__(self, size, seed, mu=0.0, theta=0.13, sigma=0.2):
+    #def __init__(self, size, seed, mu=0., theta=0.15, sigma=0.2):
         """Initialize parameters and noise process."""
         self.mu = mu * np.ones(size)
         self.theta = theta
