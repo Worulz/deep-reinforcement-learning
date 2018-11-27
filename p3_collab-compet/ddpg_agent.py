@@ -20,12 +20,8 @@ WEIGHT_DECAY = 0.0      # L2 weight decay
 n_timestepupdate = 6
 n_updatelearn = 6
 
-control_noise = 6       # noise level
-eps_end = 0 #-float('Inf')
-eps_decay = 100         # decay per episodes
-
-start_noise = 2
-noise_decay = 0.9999
+start_noise = 1
+noise_decay = 9999e-4
 decay_step = 1
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -99,7 +95,7 @@ class Agent():
             #decay noise
             if timestep % decay_step == 0 and add_noise:
                 self.eps *= noise_decay
-                self.eps -= (1/eps_decay)
+                #self.eps -= (1/eps_decay)
             actions += self.eps * self.noise.sample()
                 
         return np.clip(actions, -1, 1)
