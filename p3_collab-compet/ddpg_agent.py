@@ -17,12 +17,12 @@ LR_ACTOR = 1e-3         # learning rate of the actor
 LR_CRITIC = 1e-3        # learning rate of the critic
 WEIGHT_DECAY = 0.0      # L2 weight decay
 
-n_timestepupdate = 6
-n_updatelearn = 6
+n_timestepupdate = 6    # time steps before update to network
+n_updatelearn = 6       # number of times to update training
 
-start_noise = 1
-noise_decay = 9999e-4
-decay_step = 1
+init_noise = 1          # initial noise level
+noise_decay = 9999e-4   # weight decay
+decay_step = 1          # decay after number of steps
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -42,7 +42,7 @@ class Agent():
         self.state_size = state_size
         self.action_size = action_size
         self.num_agents = num_agents 
-        self.eps = start_noise
+        self.eps = init_noise
         self.seed = random.seed(random_seed)
 
         # Actor Network (w/ Target Network)
@@ -63,6 +63,9 @@ class Agent():
 
     def step(self, state, action, reward, next_state, done, timestep, agent):
         """Save experience in replay memory, and use random sample from buffer to learn."""
+        # reshape observations to dual, for 2 agents
+        state = np.reshape(state, (1,48)) 
+        next_state = np.reshape(next_state, (1,48)) 
         # Save experience / reward
         self.memory.add(state, action, reward, next_state, done)
         
@@ -74,9 +77,11 @@ class Agent():
                 experiences = self.memory.sample()
                 self.learn(experiences, GAMMA, agent)
 
-    def act(self, states, add_noise=True, timestep = 10):
+    def act(self, states, add_noise=True, timestep=1):
         """Returns actions for given state as per current policy."""
         states = torch.from_numpy(states).float().to(device)
+        #reshape states view to dual for 2 agents
+        states = states.view(1,48)
 
         # setup actions by the number of agents and action size
         actions = np.zeros((self.num_agents, self.action_size))
@@ -90,12 +95,10 @@ class Agent():
                 actions[agent, :] = action
         self.actor_local.train()
         if add_noise:
-            #actions += self.noise.sample()
             
             #decay noise
             if timestep % decay_step == 0 and add_noise:
                 self.eps *= noise_decay
-                #self.eps -= (1/eps_decay)
             actions += self.eps * self.noise.sample()
                 
         return np.clip(actions, -1, 1)
@@ -180,7 +183,7 @@ class Agent():
 class OUNoise:
     """Ornstein-Uhlenbeck process."""
     def __init__(self, size, seed, mu=0.0, theta=0.13, sigma=0.2):
-    #def __init__(self, size, seed, mu=0., theta=0.15, sigma=0.2):
+    
         """Initialize parameters and noise process."""
         self.mu = mu * np.ones(size)
         self.theta = theta

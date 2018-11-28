@@ -82,5 +82,4 @@ class Critic(nn.Module):
         xs = F.relu(self.fcs1(state))
         x = torch.cat((xs, action), dim=1)
         x = F.relu(self.fc2(x))
-        #x = F.leaky_relu(self.fc3(x))
         return self.fc3(x)
