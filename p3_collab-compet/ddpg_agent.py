@@ -25,6 +25,7 @@ noise_decay = 9999e-4   # weight decay
 decay_step = 1          # decay after number of steps
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+#device = torch.device("cpu")
 
 class Agent():
     """Interacts with and learns from the environment."""
